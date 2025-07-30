@@ -1,10 +1,7 @@
-from fastapi import FastAPI, HTTPException, Depends, Header
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from typing import Optional
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import json
 import asyncio
 import os
@@ -13,9 +10,7 @@ import requests
 import tempfile
 import fitz  # Only for PDF text extraction
 from dotenv import load_dotenv
-security = HTTPBearer()
-
-
+import time
 
 # Minimal dependencies - no ML libraries!
 logging.basicConfig(level=logging.INFO)
@@ -111,7 +106,7 @@ def find_relevant_sections(full_text: str, query: str, max_sections: int = 5) ->
 
 
 async def cloud_only_analysis(query: str, pdf_text: str) -> Dict[str, Any]:
-    """Pure cloud-based analysis using Groq API"""
+    """Pure cloud-based analysis using Groq API with 429 retry"""
 
     try:
         # Find relevant context without ML
@@ -168,13 +163,29 @@ Analyze this question based on the policy document and provide your response in 
         }
 
         logger.info(f"[kg290] Sending query to Groq API...")
-        response = requests.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            json=payload,
-            headers=headers,
-            timeout=30
-        )
-        response.raise_for_status()
+
+        # FIRST ATTEMPT
+        try:
+            response = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                json=payload,
+                headers=headers,
+                timeout=30
+            )
+            response.raise_for_status()
+        except requests.exceptions.HTTPError as e:
+            if hasattr(response, "status_code") and response.status_code == 429:
+                logger.warning(f"[kg290] Rate limited, retrying after 2s...")
+                time.sleep(2.0)
+                response = requests.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    json=payload,
+                    headers=headers,
+                    timeout=30
+                )
+                response.raise_for_status()
+            else:
+                raise e
 
         result = response.json()["choices"][0]["message"]["content"]
 
@@ -218,7 +229,7 @@ def root():
         "memory_usage": "< 100MB",
         "dependencies": ["FastAPI", "Requests", "PyMuPDF"],
         "user": "kg290",
-        "timestamp": "2025-07-30 16:18:28"
+        "timestamp": "2025-07-30 17:26:12"
     }
 
 
@@ -228,7 +239,7 @@ def health_check():
         "status": "healthy",
         "processing_type": "cloud_only",
         "api_available": bool(api_key),
-        "timestamp": "2025-07-30 16:18:28"
+        "timestamp": "2025-07-30 17:26:12"
     }
 
 
@@ -273,7 +284,6 @@ async def hackathon_endpoint(
 ):
     """
     Official hackathon endpoint with Authorization header support
-    Expected: Bearer 65ba922cd8398435d2231fac1ce4774139140594a23d2474c02cb61d65874cd8
     """
     try:
         # Log the authorization for debugging (remove in production)
@@ -282,9 +292,6 @@ async def hackathon_endpoint(
         else:
             logger.warning(f"[kg290] No authorization header provided")
 
-        # For hackathon, we can be flexible with auth validation
-        # In production, you'd validate the specific token
-
         logger.info(f"[kg290] Hackathon request: {len(request.questions)} questions")
         logger.info(f"[kg290] Document URL: {request.documents[:50]}...")
 
@@ -292,7 +299,7 @@ async def hackathon_endpoint(
         pdf_text = extract_pdf_text_only(request.documents)
         logger.info(f"[kg290] PDF extracted successfully: {len(pdf_text)} characters")
 
-        # Process all questions with optimized timing
+        # Process all questions with optimized timing and retry
         answers = []
 
         for i, question in enumerate(request.questions):
@@ -300,11 +307,20 @@ async def hackathon_endpoint(
 
             # Optimized delay for hackathon speed
             if i > 0:
-                await asyncio.sleep(0.3)  # Reduced from 0.5 for faster processing
+                await asyncio.sleep(0.3)
 
-            result = await cloud_only_analysis(question, pdf_text)
-            answer = result.get("answer", "Unable to determine from the policy document.")
-            answers.append(answer)
+            # Add a retry loop for rare API/network failure
+            for attempt in range(2):
+                result = await cloud_only_analysis(question, pdf_text)
+                if result.get("success", False):
+                    answer = result.get("answer", "Unable to determine from the policy document.")
+                    answers.append(answer)
+                    break
+                else:
+                    logger.warning(f"[kg290] Attempt {attempt+1}: Failed to get answer, retrying...")
+                    await asyncio.sleep(1.0)
+            else:
+                answers.append(f"Analysis failed: Could not process after 2 attempts.")
 
             logger.info(f"[kg290] Question {i + 1} completed, confidence: {result.get('confidence', 'unknown')}")
 
