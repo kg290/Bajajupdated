@@ -357,7 +357,7 @@ async def ask_query(req: QueryRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/hackrx/run")
+@app.post("/api/v1/hackrx/run")
 async def hackathon_endpoint(
         request: HackathonRequest,
         authorization: Optional[str] = Header(None)
@@ -386,7 +386,7 @@ async def hackathon_endpoint(
         failed_count = 0
 
         for i, question in enumerate(request.questions):
-            logger.info(f"[kg290] Processing question {i + 1}/{len(request.questions)}: {question[:50]}...")
+            logger.info(f"[kg290] Processing question {i + 1}/{len(request.questions)}: {question[:350]}...")
             logger.info(f"[kg290] Sending query to Groq API... (primary model)")
 
             # Try with primary model first
@@ -414,7 +414,7 @@ async def hackathon_endpoint(
                     f"[kg290] [Q{i+1}/{len(request.questions)}] confidence: {answer['confidence']} | "
                     f"time_used: {answer['time_used_seconds']}s | tokens_used: {answer['tokens_used']} | key: ...{answer['api_key_used']}"
                 )
-                answers.append(answer)
+                answers.append(answer["answer"])
             elif result_primary.get("success", False):
                 # Fallback to secondary model if confidence is low
                 logger.info(f"[kg290] Confidence too low ({result_primary.get('confidence_score', 0.0)}), trying fallback model (llama-3.3-70b-versatile)")
@@ -445,7 +445,7 @@ async def hackathon_endpoint(
                         f"[kg290] [Q{i+1}/{len(request.questions)}] (fallback) confidence: {answer['confidence']} | "
                         f"time_used: {answer['time_used_seconds']}s | tokens_used: {answer['tokens_used']} | key: ...{answer['api_key_used']}"
                     )
-                    answers.append(answer)
+                    answers.append(answer["answer"])
                 elif result_primary.get("success", False):
                     # Fallback did not improve, use primary answer
                     answer = {
@@ -470,7 +470,7 @@ async def hackathon_endpoint(
                         f"[kg290] [Q{i+1}/{len(request.questions)}] (fallback-same) confidence: {answer['confidence']} | "
                         f"time_used: {answer['time_used_seconds']}s | tokens_used: {answer['tokens_used']} | key: ...{answer['api_key_used']}"
                     )
-                    answers.append(answer)
+                    answers.append(answer["answer"])
                 else:
                     # Both attempts failed
                     answer = {
@@ -495,7 +495,7 @@ async def hackathon_endpoint(
                         f"[kg290] [Q{i+1}/{len(request.questions)}] (fallback-failed) confidence: {answer['confidence']} | "
                         f"time_used: {answer['time_used_seconds']}s | tokens_used: {answer['tokens_used']} | key: None"
                     )
-                    answers.append(answer)
+                    answers.append(answer["answer"])
             else:
                 # Both models failed (primary didn't return success)
                 answer = {
@@ -520,7 +520,7 @@ async def hackathon_endpoint(
                     f"[kg290] [Q{i+1}/{len(request.questions)}] (primary-failed) confidence: {answer['confidence']} | "
                     f"time_used: {answer['time_used_seconds']}s | tokens_used: {answer['tokens_used']} | key: None"
                 )
-                answers.append(answer)
+                answers.append(answer["answer"])
 
             logger.info(f"[kg290] Question {i + 1} completed, confidence: {answer['confidence']}")
 
