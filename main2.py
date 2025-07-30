@@ -1,3 +1,6 @@
+from fastapi import FastAPI, HTTPException, Depends, Header
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from typing import Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -10,6 +13,9 @@ import requests
 import tempfile
 import fitz  # Only for PDF text extraction
 from dotenv import load_dotenv
+security = HTTPBearer()
+
+
 
 # Minimal dependencies - no ML libraries!
 logging.basicConfig(level=logging.INFO)
@@ -261,36 +267,60 @@ async def ask_query(req: QueryRequest):
 
 
 @app.post("/hackrx/run")
-async def hackathon_endpoint(request: HackathonRequest):
-    """Optimized hackathon endpoint - pure cloud processing"""
+async def hackathon_endpoint(
+        request: HackathonRequest,
+        authorization: Optional[str] = Header(None)
+):
+    """
+    Official hackathon endpoint with Authorization header support
+    Expected: Bearer 65ba922cd8398435d2231fac1ce4774139140594a23d2474c02cb61d65874cd8
+    """
     try:
-        logger.info(f"[kg290] Cloud-only processing: {len(request.questions)} questions")
+        # Log the authorization for debugging (remove in production)
+        if authorization:
+            logger.info(f"[kg290] Authorization header received: {authorization[:20]}...")
+        else:
+            logger.warning(f"[kg290] No authorization header provided")
 
-        # Extract PDF text
+        # For hackathon, we can be flexible with auth validation
+        # In production, you'd validate the specific token
+
+        logger.info(f"[kg290] Hackathon request: {len(request.questions)} questions")
+        logger.info(f"[kg290] Document URL: {request.documents[:50]}...")
+
+        # Extract PDF text with enhanced error handling
         pdf_text = extract_pdf_text_only(request.documents)
+        logger.info(f"[kg290] PDF extracted successfully: {len(pdf_text)} characters")
 
-        # Process all questions
+        # Process all questions with optimized timing
         answers = []
 
         for i, question in enumerate(request.questions):
-            logger.info(f"[kg290] Processing question {i + 1}/{len(request.questions)}")
+            logger.info(f"[kg290] Processing question {i + 1}/{len(request.questions)}: {question[:50]}...")
 
-            # Small delay to prevent rate limiting
+            # Optimized delay for hackathon speed
             if i > 0:
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.3)  # Reduced from 0.5 for faster processing
 
             result = await cloud_only_analysis(question, pdf_text)
             answer = result.get("answer", "Unable to determine from the policy document.")
             answers.append(answer)
 
-        logger.info(f"[kg290] All questions processed successfully")
+            logger.info(f"[kg290] Question {i + 1} completed, confidence: {result.get('confidence', 'unknown')}")
 
-        return {"answers": answers}
+        logger.info(f"[kg290] All {len(request.questions)} questions processed successfully")
+
+        # Return exact format expected by hackathon
+        return {
+            "answers": answers
+        }
 
     except Exception as e:
         logger.error(f"[kg290] Hackathon endpoint failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
+        raise HTTPException(
+            status_code=500,
+            detail=f"Processing failed: {str(e)}"
+        )
 
 if __name__ == "__main__":
     import uvicorn
