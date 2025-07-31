@@ -404,12 +404,16 @@ async def hackathon_endpoint(
         fallback_count = 0
         failed_count = 0
 
+        # Define allowed models here for easy maintenance
+        primary_model = "moonshotai/kimi-k2-instruct"
+        fallback_model = "meta-llama/llama-4-scout-17b-16e-instruct"
+
         for i, question in enumerate(request.questions):
             logger.info(f"[kg290] Processing question {i + 1}/{len(request.questions)}: {question[:350]}...")
             logger.info(f"[kg290] Sending query to Groq API... (primary model)")
 
             # Try with primary model first
-            result_primary = await cloud_only_analysis(question, pdf_text, model_id="moonshotai/kimi-k2-instruct")
+            result_primary = await cloud_only_analysis(question, pdf_text, model_id=primary_model)
 
             if result_primary.get("success", False) and result_primary.get("confidence_score", 0.0) >= 0.4:
                 answer = {
@@ -436,8 +440,8 @@ async def hackathon_endpoint(
                 answers.append(answer["answer"])
             elif result_primary.get("success", False):
                 # Fallback to secondary model if confidence is low
-                logger.info(f"[kg290] Confidence too low ({result_primary.get('confidence_score', 0.0)}), trying fallback model (meta-llama/llama-4-scout-17b-16e-instruct)")
-                result_fallback = await cloud_only_analysis(question, pdf_text, model_id="meta-llama/llama-4-scout-17b-16e-instruct")
+                logger.info(f"[kg290] Confidence too low ({result_primary.get('confidence_score', 0.0)}), trying fallback model ({fallback_model})")
+                result_fallback = await cloud_only_analysis(question, pdf_text, model_id=fallback_model)
 
                 # Choose the answer with higher confidence
                 if (result_fallback.get("success", False) and
