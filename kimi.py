@@ -54,10 +54,13 @@ class GroqAPIKeyPool:
 
 # List your Groq API keys here (add as many as needed for hackathon/prod)
 groq_keys = [
-    "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",
-    "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",
-    "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",
-    "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"
+    #"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",
+    #"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",
+    #"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",
+    "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",
+    "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",
+    "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",
+    "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"
 ]
 groq_pool = GroqAPIKeyPool(groq_keys)
 
@@ -153,7 +156,7 @@ def get_confidence_score(confidence_label):
     return mapping.get(str(confidence_label).lower(), 0.6)
 
 
-async def cloud_only_analysis(query: str, pdf_text: str, model_id: str = "meta-llama/llama-4-scout-17b-16e-instruct") -> Dict[str, Any]:
+async def cloud_only_analysis(query: str, pdf_text: str, model_id: str = "moonshotai/kimi-k2-instruct") -> Dict[str, Any]:
     """Pure cloud-based analysis using Groq API with 429 retry and multi-key support + stats/logs"""
     try:
         relevant_context = find_relevant_sections(pdf_text, query)
@@ -406,7 +409,7 @@ async def hackathon_endpoint(
             logger.info(f"[kg290] Sending query to Groq API... (primary model)")
 
             # Try with primary model first
-            result_primary = await cloud_only_analysis(question, pdf_text, model_id="meta-llama/llama-4-scout-17b-16e-instruct")
+            result_primary = await cloud_only_analysis(question, pdf_text, model_id="moonshotai/kimi-k2-instruct")
 
             if result_primary.get("success", False) and result_primary.get("confidence_score", 0.0) >= 0.4:
                 answer = {
@@ -433,8 +436,8 @@ async def hackathon_endpoint(
                 answers.append(answer["answer"])
             elif result_primary.get("success", False):
                 # Fallback to secondary model if confidence is low
-                logger.info(f"[kg290] Confidence too low ({result_primary.get('confidence_score', 0.0)}), trying fallback model (moonshotai/kimi-k2-instruct)")
-                result_fallback = await cloud_only_analysis(question, pdf_text, model_id="moonshotai/kimi-k2-instruct")
+                logger.info(f"[kg290] Confidence too low ({result_primary.get('confidence_score', 0.0)}), trying fallback model (meta-llama/llama-4-scout-17b-16e-instruct)")
+                result_fallback = await cloud_only_analysis(question, pdf_text, model_id="meta-llama/llama-4-scout-17b-16e-instruct")
 
                 # Choose the answer with higher confidence
                 if (result_fallback.get("success", False) and
